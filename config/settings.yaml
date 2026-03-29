@@ -1,0 +1,45 @@
+trading:
+  mode: paper                  # paper | live | backtest
+  exchange: binance
+  symbols:
+    - BTC/USDT
+    - ETH/USDT
+  timeframe: 1h
+  initial_capital: 10000
+
+risk:
+  max_position_pct: 5          # Max 5% of portfolio per trade
+  stop_loss_pct: 2             # 2% stop loss
+  take_profit_pct: 6           # 6% take profit
+  max_drawdown_pct: 15         # Pause trading at 15% drawdown
+  daily_loss_limit: 500        # Max $500 loss per day
+  max_open_positions: 3
+  cooldown_periods: 3          # Pause after 3 consecutive losses
+
+ml:
+  model_type: lstm             # lstm | transformer
+  lookback_window: 60          # Number of candles for prediction
+  retrain_interval: 7d         # Retrain every 7 days
+  confidence_threshold: 0.65   # Minimum confidence to act on signal
+  hidden_size: 128
+  num_layers: 2
+  dropout: 0.2
+  learning_rate: 0.001
+  epochs: 50
+  batch_size: 32
+
+alerts:
+  telegram:
+    enabled: false
+    bot_token: ${TELEGRAM_BOT_TOKEN}
+    chat_id: ${TELEGRAM_CHAT_ID}
+  discord:
+    enabled: false
+    webhook_url: ${DISCORD_WEBHOOK}
+
+database:
+  url: sqlite:///data/trading.db
+
+logging:
+  level: INFO
+  file: logs/trading.log
