@@ -38,6 +38,9 @@ models/*.pth
 models/*.pkl
 models/*.joblib
 
+# Generated charts
+charts/
+
 # Logs
 logs/
 *.log
