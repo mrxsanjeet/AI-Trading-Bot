@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Trading Bot - Indian Stock Market</title>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: #0a0e17;
+            color: #e1e5ea;
+            min-height: 100vh;
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #1a1f2e 0%, #0d1117 100%);
+            border-bottom: 1px solid #21262d;
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 { font-size: 20px; color: #58a6ff; }
+        .header .status {
+            display: flex; gap: 16px; align-items: center;
+            font-size: 13px; color: #8b949e;
+        }
+        .header .dot { width: 8px; height: 8px; border-radius: 50%; background: #3fb950; display: inline-block; margin-right: 4px; }
+
+        /* Tabs */
+        .tabs {
+            display: flex; gap: 0;
+            background: #161b22;
+            border-bottom: 1px solid #21262d;
+            padding: 0 24px;
+        }
+        .tab {
+            padding: 12px 20px;
+            cursor: pointer;
+            color: #8b949e;
+            border-bottom: 2px solid transparent;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        .tab:hover { color: #e1e5ea; }
+        .tab.active { color: #58a6ff; border-bottom-color: #58a6ff; }
+
+        /* Content */
+        .content { padding: 24px; max-width: 1400px; margin: 0 auto; }
+        .panel { display: none; }
+        .panel.active { display: block; }
+
+        /* Cards */
+        .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .card {
+            background: #161b22;
+            border: 1px solid #21262d;
+            border-radius: 8px;
+            padding: 16px;
+        }
+        .card .label { font-size: 12px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; }
+        .card .value { font-size: 24px; font-weight: 600; margin-top: 4px; }
+        .card .change { font-size: 13px; margin-top: 2px; }
+        .green { color: #3fb950; }
+        .red { color: #f85149; }
+        .blue { color: #58a6ff; }
+
+        /* Controls */
+        .controls {
+            display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+        select, button, input {
+            padding: 8px 14px;
+            border-radius: 6px;
+            border: 1px solid #30363d;
+            background: #161b22;
+            color: #e1e5ea;
+            font-size: 14px;
+        }
+        select:focus, input:focus { border-color: #58a6ff; outline: none; }
+        button {
+            background: #238636;
+            border-color: #238636;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+        button:hover { background: #2ea043; }
+        button.secondary { background: #21262d; border-color: #30363d; }
+        button.secondary:hover { background: #30363d; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* Chart */
+        .chart-container {
+            background: #161b22;
+            border: 1px solid #21262d;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 24px;
+        }
+
+        /* Table */
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid #21262d; font-size: 13px; }
+        th { color: #8b949e; font-weight: 500; font-size: 12px; text-transform: uppercase; }
+        tr:hover { background: rgba(88,166,255,0.05); }
+
+        /* Signal badge */
+        .badge {
+            padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600;
+            display: inline-block;
+        }
+        .badge.buy { background: rgba(63,185,80,0.15); color: #3fb950; }
+        .badge.sell { background: rgba(248,81,73,0.15); color: #f85149; }
+        .badge.hold { background: rgba(139,148,158,0.15); color: #8b949e; }
+
+        /* Signal cards */
+        .signal-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 16px;
+            margin-top: 16px;
+        }
+        .signal-card {
+            background: #161b22;
+            border: 1px solid #21262d;
+            border-radius: 8px;
+            padding: 20px;
+        }
+        .signal-card h3 { font-size: 16px; margin-bottom: 8px; }
+        .signal-card .price { font-size: 22px; font-weight: 600; }
+        .signal-card .strategy-list { margin-top: 12px; }
+        .strategy-item { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #21262d; font-size: 13px; }
+
+        /* Loading */
+        .loading { text-align: center; padding: 40px; color: #8b949e; }
+        .spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid #30363d; border-top-color: #58a6ff; border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Backtest results */
+        .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin: 16px 0; }
+        .metric { background: #0d1117; border-radius: 6px; padding: 12px; }
+        .metric .label { font-size: 11px; color: #8b949e; }
+        .metric .value { font-size: 18px; font-weight: 600; margin-top: 2px; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>AI Trading Bot</h1>
+    <div class="status">
+        <span><span class="dot"></span> Indian Market (NSE)</span>
+        <span>Mode: Paper Trading</span>
+        <span id="clock"></span>
+    </div>
+</div>
+
+<div class="tabs">
+    <div class="tab active" onclick="showPanel('dashboard')">Dashboard</div>
+    <div class="tab" onclick="showPanel('signals')">Live Signals</div>
+    <div class="tab" onclick="showPanel('backtest')">Backtest</div>
+    <div class="tab" onclick="showPanel('portfolio')">Portfolio</div>
+    <div class="tab" onclick="showPanel('trades')">Trade History</div>
+</div>
+
+<div class="content">
+
+    <!-- ===== DASHBOARD ===== -->
+    <div id="dashboard" class="panel active">
+        <div class="cards" id="dashboard-cards">
+            <div class="card"><div class="label">Portfolio Value</div><div class="value" id="d-value">$10,000</div></div>
+            <div class="card"><div class="label">Total Return</div><div class="value green" id="d-return">+0.00%</div></div>
+            <div class="card"><div class="label">Open Positions</div><div class="value blue" id="d-positions">0</div></div>
+            <div class="card"><div class="label">Win Rate</div><div class="value" id="d-winrate">0%</div></div>
+            <div class="card"><div class="label">Total Trades</div><div class="value" id="d-trades">0</div></div>
+        </div>
+
+        <div class="controls">
+            <select id="chart-symbol">
+                <option value="RELIANCE.NS">RELIANCE</option>
+                <option value="TCS.NS">TCS</option>
+                <option value="INFY.NS">INFY</option>
+                <option value="HDFCBANK.NS">HDFC Bank</option>
+                <option value="SBIN.NS">SBI</option>
+                <option value="ICICIBANK.NS">ICICI Bank</option>
+                <option value="TATAMOTORS.NS">Tata Motors</option>
+                <option value="WIPRO.NS">Wipro</option>
+                <option value="ITC.NS">ITC</option>
+                <option value="BAJFINANCE.NS">Bajaj Finance</option>
+            </select>
+            <select id="chart-period">
+                <option value="6mo">6 Months</option>
+                <option value="1y" selected>1 Year</option>
+                <option value="2y">2 Years</option>
+                <option value="5y">5 Years</option>
+            </select>
+            <button onclick="loadChart()">Load Chart</button>
+            <button class="secondary" onclick="getSignal()">Get Signal</button>
+        </div>
+
+        <div class="chart-container">
+            <div id="price-chart" style="height: 450px;"><div class="loading">Select a stock and click "Load Chart"</div></div>
+        </div>
+        <div class="chart-container">
+            <div id="indicator-chart" style="height: 250px;"></div>
+        </div>
+    </div>
+
+    <!-- ===== LIVE SIGNALS ===== -->
+    <div id="signals" class="panel">
+        <h2 style="margin-bottom: 16px;">Live Trading Signals</h2>
+        <div class="controls">
+            <button onclick="scanAllSignals()">Scan All Stocks</button>
+            <button class="secondary" onclick="clearSignals()">Clear</button>
+        </div>
+        <div class="signal-grid" id="signals-grid">
+            <div class="loading">Click "Scan All Stocks" to get signals for all NSE stocks</div>
+        </div>
+    </div>
+
+    <!-- ===== BACKTEST ===== -->
+    <div id="backtest" class="panel">
+        <h2 style="margin-bottom: 16px;">Strategy Backtester</h2>
+        <div class="controls">
+            <select id="bt-symbol">
+                <option value="RELIANCE.NS">RELIANCE</option>
+                <option value="TCS.NS">TCS</option>
+                <option value="INFY.NS">INFY</option>
+                <option value="HDFCBANK.NS">HDFC Bank</option>
+                <option value="SBIN.NS">SBI</option>
+                <option value="TATAMOTORS.NS">Tata Motors</option>
+                <option value="WIPRO.NS">Wipro</option>
+            </select>
+            <select id="bt-strategy">
+                <option value="trend">Trend Following</option>
+                <option value="mean_reversion">Mean Reversion</option>
+                <option value="momentum">Momentum</option>
+            </select>
+            <input type="number" id="bt-capital" value="10000" min="1000" style="width:110px;" placeholder="Capital">
+            <select id="bt-period">
+                <option value="1y">1 Year</option>
+                <option value="2y" selected>2 Years</option>
+                <option value="5y">5 Years</option>
+            </select>
+            <button onclick="runBacktest()" id="bt-btn">Run Backtest</button>
+        </div>
+        <div id="bt-results"></div>
+        <div class="chart-container">
+            <div id="equity-chart" style="height: 350px;"></div>
+        </div>
+        <div id="bt-trades-table"></div>
+    </div>
+
+    <!-- ===== PORTFOLIO ===== -->
+    <div id="portfolio" class="panel">
+        <h2 style="margin-bottom: 16px;">Paper Trading Portfolio</h2>
+        <div class="controls">
+            <button onclick="loadPortfolio()">Refresh</button>
+            <button class="secondary" onclick="resetPortfolio()">Reset Portfolio</button>
+        </div>
+        <div class="cards" id="portfolio-cards"></div>
+        <h3 style="margin: 16px 0 8px;">Open Positions</h3>
+        <div id="positions-table"></div>
+    </div>
+
+    <!-- ===== TRADES ===== -->
+    <div id="trades" class="panel">
+        <h2 style="margin-bottom: 16px;">Trade History</h2>
+        <button onclick="loadTrades()">Refresh</button>
+        <div id="trades-table" style="margin-top: 16px;"></div>
+    </div>
+
+</div>
+
+<script>
+const API = '';  // Same origin
+
+// --- Tab switching ---
+function showPanel(id) {
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    event.target.classList.add('active');
+
+    if (id === 'portfolio') loadPortfolio();
+    if (id === 'trades') loadTrades();
+}
+
+// --- Clock ---
+setInterval(() => {
+    document.getElementById('clock').textContent = new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST';
+}, 1000);
+
+// --- Load Chart ---
+async function loadChart() {
+    const symbol = document.getElementById('chart-symbol').value;
+    const period = document.getElementById('chart-period').value;
+    document.getElementById('price-chart').innerHTML = '<div class="loading"><div class="spinner"></div> Loading...</div>';
+
+    try {
+        const res = await fetch(`${API}/api/stock/${symbol}?period=${period}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail);
+        renderPriceChart(data);
+        renderIndicatorChart(data);
+    } catch(e) {
+        document.getElementById('price-chart').innerHTML = `<div class="loading" style="color:#f85149;">Error: ${e.message}</div>`;
+    }
+}
+
+function renderPriceChart(data) {
+    const ohlcv = data.ohlcv;
+    const ts = ohlcv.map(d => d.timestamp);
+
+    const candlestick = {
+        x: ts, open: ohlcv.map(d => d.open), high: ohlcv.map(d => d.high),
+        low: ohlcv.map(d => d.low), close: ohlcv.map(d => d.close),
+        type: 'candlestick', name: 'Price',
+        increasing: { line: { color: '#26a69a' } },
+        decreasing: { line: { color: '#ef5350' } },
+    };
+
+    const ind = data.indicators;
+    const ema12 = { x: ts, y: ind.map(d => d.ema_12), type: 'scatter', name: 'EMA 12', line: { color: '#2196F3', width: 1 } };
+    const ema26 = { x: ts, y: ind.map(d => d.ema_26), type: 'scatter', name: 'EMA 26', line: { color: '#FF9800', width: 1 } };
+    const bbU = { x: ts, y: ind.map(d => d.bb_upper), type: 'scatter', name: 'BB Upper', line: { color: 'rgba(150,150,150,0.4)', width: 1, dash: 'dot' } };
+    const bbL = { x: ts, y: ind.map(d => d.bb_lower), type: 'scatter', name: 'BB Lower', line: { color: 'rgba(150,150,150,0.4)', width: 1, dash: 'dot' }, fill: 'tonexty', fillcolor: 'rgba(150,150,150,0.05)' };
+
+    Plotly.newPlot('price-chart', [candlestick, ema12, ema26, bbU, bbL], {
+        title: `${data.name} (${data.symbol}) — ${data.candles} candles`,
+        template: 'plotly_dark', paper_bgcolor: '#161b22', plot_bgcolor: '#161b22',
+        xaxis: { rangeslider: { visible: false } },
+        margin: { l: 50, r: 20, t: 40, b: 30 }, height: 450,
+        legend: { orientation: 'h', y: 1.1 },
+    });
+}
+
+function renderIndicatorChart(data) {
+    const ind = data.indicators;
+    const ts = data.ohlcv.map(d => d.timestamp);
+
+    const rsi = { x: ts, y: ind.map(d => d.rsi), type: 'scatter', name: 'RSI', line: { color: '#AB47BC', width: 1.5 } };
+
+    Plotly.newPlot('indicator-chart', [rsi], {
+        template: 'plotly_dark', paper_bgcolor: '#161b22', plot_bgcolor: '#161b22',
+        yaxis: { title: 'RSI', range: [0, 100] },
+        shapes: [
+            { type: 'line', y0: 70, y1: 70, x0: 0, x1: 1, xref: 'paper', line: { color: '#f85149', dash: 'dash', width: 1 } },
+            { type: 'line', y0: 30, y1: 30, x0: 0, x1: 1, xref: 'paper', line: { color: '#3fb950', dash: 'dash', width: 1 } },
+        ],
+        margin: { l: 50, r: 20, t: 10, b: 30 }, height: 250,
+    });
+}
+
+// --- Get Signal ---
+async function getSignal() {
+    const symbol = document.getElementById('chart-symbol').value;
+    try {
+        const res = await fetch(`${API}/api/signal/${symbol}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail);
+        alert(`${symbol}\nSignal: ${data.signal}\nConfidence: ${(data.confidence * 100).toFixed(1)}%\nPrice: ₹${data.price}\nReason: ${data.reason}`);
+    } catch(e) {
+        alert('Error: ' + e.message);
+    }
+}
+
+// --- Scan All Signals ---
+async function scanAllSignals() {
+    const grid = document.getElementById('signals-grid');
+    grid.innerHTML = '<div class="loading"><div class="spinner"></div> Scanning all stocks...</div>';
+    const symbols = ['RELIANCE.NS','TCS.NS','INFY.NS','HDFCBANK.NS','SBIN.NS','ICICIBANK.NS','TATAMOTORS.NS','WIPRO.NS','ITC.NS','BAJFINANCE.NS'];
+
+    let html = '';
+    for (const sym of symbols) {
+        try {
+            const res = await fetch(`${API}/api/signal/${sym}`);
+            const data = await res.json();
+            if (!res.ok) continue;
+            const name = sym.replace('.NS','');
+            const badgeClass = data.signal === 'BUY' ? 'buy' : data.signal === 'SELL' ? 'sell' : 'hold';
+            const strategies = Object.entries(data.strategies || {}).map(([k,v]) =>
+                `<div class="strategy-item"><span>${k}</span><span class="badge ${v.signal.toLowerCase()}">${v.signal}</span></div>`
+            ).join('');
+
+            html += `
+                <div class="signal-card">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <h3>${name}</h3>
+                        <span class="badge ${badgeClass}">${data.signal}</span>
+                    </div>
+                    <div class="price">₹${data.price.toLocaleString()}</div>
+                    <div style="margin-top:8px; font-size:13px; color:#8b949e;">
+                        RSI: ${data.indicators?.rsi ?? 'N/A'} | MACD: ${data.indicators?.macd ?? 'N/A'}
+                    </div>
+                    <div style="margin-top:4px; font-size:12px; color:#8b949e;">Confidence: ${(data.confidence*100).toFixed(1)}%</div>
+                    <div class="strategy-list">${strategies}</div>
+                </div>`;
+        } catch(e) {
+            const name = sym.replace('.NS','');
+            html += `<div class="signal-card"><h3>${name}</h3><div style="color:#f85149;">Error loading</div></div>`;
+        }
+        grid.innerHTML = html;
+    }
+}
+function clearSignals() { document.getElementById('signals-grid').innerHTML = ''; }
+
+// --- Backtest ---
+async function runBacktest() {
+    const btn = document.getElementById('bt-btn');
+    btn.disabled = true; btn.textContent = 'Running...';
+
+    const body = {
+        symbol: document.getElementById('bt-symbol').value,
+        strategy: document.getElementById('bt-strategy').value,
+        capital: parseFloat(document.getElementById('bt-capital').value),
+        period: document.getElementById('bt-period').value,
+    };
+
+    try {
+        const res = await fetch(`${API}/api/backtest`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail);
+        renderBacktestResults(data);
+    } catch(e) {
+        document.getElementById('bt-results').innerHTML = `<div style="color:#f85149; padding:16px;">Error: ${e.message}</div>`;
+    }
+    btn.disabled = false; btn.textContent = 'Run Backtest';
+}
+
+function renderBacktestResults(data) {
+    const m = data.metrics;
+    const retColor = m.total_return_pct >= 0 ? 'green' : 'red';
+    document.getElementById('bt-results').innerHTML = `
+        <div class="metrics-grid">
+            <div class="metric"><div class="label">Total Return</div><div class="value ${retColor}">${m.total_return_pct >= 0 ? '+' : ''}${m.total_return_pct.toFixed(2)}%</div></div>
+            <div class="metric"><div class="label">Final Value</div><div class="value">$${m.final_value.toLocaleString(undefined,{minimumFractionDigits:2})}</div></div>
+            <div class="metric"><div class="label">Sharpe Ratio</div><div class="value">${m.sharpe_ratio.toFixed(2)}</div></div>
+            <div class="metric"><div class="label">Max Drawdown</div><div class="value red">${m.max_drawdown_pct.toFixed(2)}%</div></div>
+            <div class="metric"><div class="label">Total Trades</div><div class="value">${m.total_trades}</div></div>
+            <div class="metric"><div class="label">Win Rate</div><div class="value">${m.win_rate.toFixed(1)}%</div></div>
+            <div class="metric"><div class="label">Profit Factor</div><div class="value">${m.profit_factor.toFixed(2)}</div></div>
+            <div class="metric"><div class="label">Total Fees</div><div class="value">$${m.total_fees.toFixed(2)}</div></div>
+        </div>`;
+
+    // Equity curve
+    if (data.equity_curve && data.equity_curve.length > 0) {
+        const eq = data.equity_curve;
+        Plotly.newPlot('equity-chart', [{
+            x: eq.map(d => d.timestamp), y: eq.map(d => d.value),
+            type: 'scatter', fill: 'tozeroy', name: 'Portfolio Value',
+            line: { color: '#00BCD4', width: 2 },
+            fillcolor: 'rgba(0,188,212,0.1)',
+        }], {
+            title: 'Equity Curve', template: 'plotly_dark',
+            paper_bgcolor: '#161b22', plot_bgcolor: '#161b22',
+            margin: { l: 50, r: 20, t: 40, b: 30 }, height: 350,
+        });
+    }
+
+    // Trades table
+    if (data.trades && data.trades.length > 0) {
+        const rows = data.trades.filter(t => t.pnl !== undefined).map(t => {
+            const pnlColor = t.pnl >= 0 ? 'green' : 'red';
+            return `<tr>
+                <td>${t.timestamp ? new Date(t.timestamp).toLocaleDateString() : ''}</td>
+                <td>${t.side || t.action || ''}</td>
+                <td>₹${(t.exit_price || t.price || 0).toFixed(2)}</td>
+                <td class="${pnlColor}">$${t.pnl >= 0 ? '+' : ''}${t.pnl.toFixed(2)}</td>
+                <td>${t.reason || ''}</td>
+            </tr>`;
+        }).join('');
+        document.getElementById('bt-trades-table').innerHTML = `
+            <h3 style="margin: 16px 0 8px;">Trades</h3>
+            <table><thead><tr><th>Date</th><th>Side</th><th>Price</th><th>P&L</th><th>Reason</th></tr></thead>
+            <tbody>${rows}</tbody></table>`;
+    }
+}
+
+// --- Portfolio ---
+async function loadPortfolio() {
+    try {
+        const res = await fetch(`${API}/api/portfolio`);
+        const data = await res.json();
+        const p = data.portfolio;
+
+        document.getElementById('portfolio-cards').innerHTML = `
+            <div class="card"><div class="label">Total Value</div><div class="value">$${p.total_value.toLocaleString(undefined,{minimumFractionDigits:2})}</div></div>
+            <div class="card"><div class="label">Cash Balance</div><div class="value">$${p.cash_balance.toLocaleString(undefined,{minimumFractionDigits:2})}</div></div>
+            <div class="card"><div class="label">Return</div><div class="value ${p.total_return_pct >= 0 ? 'green' : 'red'}">${p.total_return_pct >= 0 ? '+' : ''}${p.total_return_pct.toFixed(2)}%</div></div>
+            <div class="card"><div class="label">Win Rate</div><div class="value">${p.win_rate.toFixed(1)}%</div></div>
+            <div class="card"><div class="label">Trades</div><div class="value">${p.total_trades}</div></div>
+        `;
+
+        const positions = Object.entries(data.positions);
+        if (positions.length > 0) {
+            const rows = positions.map(([sym, pos]) => {
+                const pnlColor = pos.unrealized_pnl >= 0 ? 'green' : 'red';
+                return `<tr>
+                    <td>${sym.replace('.NS','')}</td><td>${pos.side}</td>
+                    <td>₹${pos.entry_price.toFixed(2)}</td><td>₹${pos.current_price.toFixed(2)}</td>
+                    <td class="${pnlColor}">$${pos.unrealized_pnl >= 0 ? '+' : ''}${pos.unrealized_pnl.toFixed(2)} (${pos.unrealized_pnl_pct.toFixed(1)}%)</td>
+                </tr>`;
+            }).join('');
+            document.getElementById('positions-table').innerHTML = `
+                <table><thead><tr><th>Symbol</th><th>Side</th><th>Entry</th><th>Current</th><th>P&L</th></tr></thead>
+                <tbody>${rows}</tbody></table>`;
+        } else {
+            document.getElementById('positions-table').innerHTML = '<div style="color:#8b949e; padding:16px;">No open positions</div>';
+        }
+    } catch(e) {
+        document.getElementById('portfolio-cards').innerHTML = `<div style="color:#f85149;">Error: ${e.message}</div>`;
+    }
+}
+
+async function resetPortfolio() {
+    if (!confirm('Reset portfolio? All positions will be closed.')) return;
+    await fetch(`${API}/api/portfolio/reset`, { method: 'POST' });
+    loadPortfolio();
+}
+
+// --- Trades ---
+async function loadTrades() {
+    try {
+        const res = await fetch(`${API}/api/trades?limit=50`);
+        const data = await res.json();
+        if (data.trades.length === 0) {
+            document.getElementById('trades-table').innerHTML = '<div style="color:#8b949e;">No trades yet</div>';
+            return;
+        }
+        const rows = data.trades.map(t => `
+            <tr>
+                <td>${t.timestamp ? new Date(t.timestamp).toLocaleString() : ''}</td>
+                <td>${t.symbol?.replace('.NS','') || ''}</td>
+                <td><span class="badge ${t.side?.toLowerCase() === 'buy' ? 'buy' : 'sell'}">${t.side}</span></td>
+                <td>₹${(t.price || 0).toFixed(2)}</td>
+                <td>${(t.quantity || 0).toFixed(4)}</td>
+                <td>${t.strategy || ''}</td>
+                <td>${(t.confidence || 0).toFixed(1)}%</td>
+            </tr>
+        `).join('');
+        document.getElementById('trades-table').innerHTML = `
+            <table><thead><tr><th>Time</th><th>Symbol</th><th>Side</th><th>Price</th><th>Qty</th><th>Strategy</th><th>Confidence</th></tr></thead>
+            <tbody>${rows}</tbody></table>`;
+    } catch(e) {
+        document.getElementById('trades-table').innerHTML = `<div style="color:#f85149;">Error: ${e.message}</div>`;
+    }
+}
+
+// --- Init ---
+document.addEventListener('DOMContentLoaded', () => { loadPortfolio(); });
+</script>
+
+</body>
+</html>

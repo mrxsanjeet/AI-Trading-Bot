@@ -15,7 +15,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Create necessary directories
-RUN mkdir -p data models logs
+RUN mkdir -p data models logs charts
 
-# Default command
-CMD ["python", "-m", "src.main", "status"]
+# Expose web dashboard port
+EXPOSE 8000
+
+# Default: start web dashboard
+CMD ["python", "run.py", "--public", "--no-browser"]
