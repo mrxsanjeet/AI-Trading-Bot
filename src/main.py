@@ -29,16 +29,16 @@ signal.signal(signal.SIGTERM, _signal_handler)
 
 @click.group()
 def cli():
-    """AI Trading Bot — ML-powered trading with risk management."""
+    """AI Trading Bot — ML-powered Indian Stock & Crypto Trading."""
     pass
 
 
 @cli.command()
-@click.option("--symbol", "-s", default=None, help="Trading pair (e.g., BTC/USDT)")
-@click.option("--timeframe", "-t", default=None, help="Candle timeframe (1m, 5m, 1h, etc.)")
+@click.option("--symbol", "-s", default=None, help="Stock ticker (e.g., RELIANCE.NS) or crypto pair")
+@click.option("--timeframe", "-t", default=None, help="Candle timeframe (1m, 5m, 1h, 1d)")
 @click.option("--interval", "-i", default=60, help="Polling interval in seconds")
 def paper(symbol, timeframe, interval):
-    """Run the bot in paper trading mode."""
+    """Run the bot in paper trading mode (fake money)."""
     config = load_config()
     strategies_config = load_strategies_config()
 
@@ -60,7 +60,7 @@ def paper(symbol, timeframe, interval):
     from src.strategy.trend import TrendFollowingStrategy
 
     # Initialize components
-    exchange_id = config["trading"]["exchange"]
+    exchange_id = config["trading"].get("exchange", "NSE")
     fetcher = MarketDataFetcher(exchange_id)
     cleaner = DataCleaner()
     feature_eng = FeatureEngineer()
@@ -80,10 +80,14 @@ def paper(symbol, timeframe, interval):
 
     paper_trader = PaperTrader(portfolio, risk_manager, storage)
 
-    logger.info(
-        f"Paper Trading started | Symbols: {symbols} | "
-        f"Timeframe: {tf} | Capital: ${initial_capital:,}"
-    )
+    click.echo(f"\n{'='*60}")
+    click.echo(f"  PAPER TRADING MODE (Fake Money)")
+    click.echo(f"  Market:    {config['trading'].get('market', 'indian').upper()}")
+    click.echo(f"  Symbols:   {', '.join(symbols)}")
+    click.echo(f"  Timeframe: {tf}")
+    click.echo(f"  Capital:   ${initial_capital:,}")
+    click.echo(f"  Interval:  {interval}s")
+    click.echo(f"{'='*60}\n")
 
     while not _shutdown:
         for sym in symbols:
@@ -98,12 +102,12 @@ def paper(symbol, timeframe, interval):
 
                 # Generate signal
                 result = aggregator.generate_signals(df, sym)
-                signal = result["aggregated_signal"]
-                logger.info(f"[{sym}] {signal}")
+                sig = result["aggregated_signal"]
+                logger.info(f"[{sym}] {sig}")
 
                 # Execute
                 current_prices = {sym: df["close"].iloc[-1]}
-                trade = paper_trader.execute_signal(signal, current_prices)
+                trade = paper_trader.execute_signal(sig, current_prices)
                 if trade:
                     alert_manager.send_trade_alert(trade)
 
@@ -119,29 +123,36 @@ def paper(symbol, timeframe, interval):
             except Exception:
                 pass
 
-        stats = portfolio.get_stats(prices)
-        logger.info(
-            f"Portfolio: ${stats['total_value']:,.2f} | "
-            f"P&L: ${stats['realized_pnl']:+,.2f} | "
-            f"Positions: {stats['open_positions']}"
-        )
+        if prices:
+            stats = portfolio.get_stats(prices)
+            logger.info(
+                f"Portfolio: ${stats['total_value']:,.2f} | "
+                f"P&L: ${stats['realized_pnl']:+,.2f} | "
+                f"Positions: {stats['open_positions']}"
+            )
 
         time.sleep(interval)
 
     # Shutdown
     logger.info("Shutting down paper trader...")
-    logger.info(f"Final portfolio value: ${portfolio.total_value(prices):,.2f}")
+    if prices:
+        logger.info(f"Final portfolio value: ${portfolio.total_value(prices):,.2f}")
 
 
 @cli.command()
-@click.option("--symbol", "-s", required=True, help="Trading pair (e.g., BTC/USDT)")
-@click.option("--timeframe", "-t", default="1h", help="Candle timeframe")
+@click.option("--symbol", "-s", default=None, help="Stock ticker (e.g., RELIANCE.NS)")
+@click.option("--timeframe", "-t", default="1d", help="Candle timeframe")
 @click.option("--strategy", "-st", default="trend", help="Strategy: trend, mean_reversion, momentum")
 @click.option("--capital", "-c", default=10000.0, help="Initial capital")
-def backtest(symbol, timeframe, strategy, capital):
+@click.option("--chart", is_flag=True, help="Generate TradingView-style HTML chart")
+def backtest(symbol, timeframe, strategy, capital, chart):
     """Run a backtest on historical data."""
     config = load_config()
     strategies_config = load_strategies_config()
+
+    # Default to first configured symbol if not specified
+    if symbol is None:
+        symbol = config["trading"]["symbols"][0]
 
     from src.data.cleaner import DataCleaner
     from src.data.features import FeatureEngineer
@@ -167,7 +178,7 @@ def backtest(symbol, timeframe, strategy, capital):
 
     # Fetch historical data
     click.echo(f"Fetching historical data for {symbol} ({timeframe})...")
-    exchange_id = config["trading"]["exchange"]
+    exchange_id = config["trading"].get("exchange", "NSE")
     fetcher = MarketDataFetcher(exchange_id)
     cleaner = DataCleaner()
     feature_eng = FeatureEngineer()
@@ -208,14 +219,24 @@ def backtest(symbol, timeframe, strategy, capital):
     click.echo(f"  Total Fees:       ${metrics['total_fees']:,.2f}")
     click.echo("=" * 60)
 
+    # Generate TradingView-style chart
+    if chart:
+        from src.dashboard.charts import generate_backtest_chart
+        chart_path = generate_backtest_chart(df, result, symbol)
+        click.echo(f"\n  Chart saved: {chart_path}")
+        click.echo(f"  Open in browser to view TradingView-style chart")
+
 
 @cli.command()
-@click.option("--symbol", "-s", required=True, help="Trading pair")
-@click.option("--timeframe", "-t", default="1h", help="Candle timeframe")
+@click.option("--symbol", "-s", default=None, help="Stock ticker (e.g., RELIANCE.NS)")
+@click.option("--timeframe", "-t", default="1d", help="Candle timeframe")
 @click.option("--epochs", "-e", default=50, help="Training epochs")
 def train(symbol, timeframe, epochs):
-    """Train the ML prediction model."""
+    """Train the ML prediction model on historical data."""
     config = load_config()
+
+    if symbol is None:
+        symbol = config["trading"]["symbols"][0]
 
     from src.data.cleaner import DataCleaner
     from src.data.features import FeatureEngineer
@@ -225,7 +246,7 @@ def train(symbol, timeframe, epochs):
     from src.ml.train import ModelTrainer
 
     click.echo(f"Fetching training data for {symbol}...")
-    exchange_id = config["trading"]["exchange"]
+    exchange_id = config["trading"].get("exchange", "NSE")
     fetcher = MarketDataFetcher(exchange_id)
     cleaner = DataCleaner()
     feature_eng = FeatureEngineer()
@@ -268,10 +289,43 @@ def train(symbol, timeframe, epochs):
 
 
 @cli.command()
+@click.option("--symbol", "-s", default=None, help="Stock ticker (e.g., RELIANCE.NS)")
+@click.option("--timeframe", "-t", default="1d", help="Candle timeframe")
+@click.option("--period", "-p", default="1y", help="Data period (1mo, 3mo, 6mo, 1y, 2y, 5y)")
+def chart(symbol, timeframe, period):
+    """Generate a TradingView-style interactive chart (opens in browser)."""
+    config = load_config()
+
+    if symbol is None:
+        symbol = config["trading"]["symbols"][0]
+
+    from src.data.cleaner import DataCleaner
+    from src.data.features import FeatureEngineer
+    from src.data.fetcher import MarketDataFetcher
+    from src.dashboard.charts import generate_tradingview_chart
+
+    click.echo(f"Fetching data for {symbol}...")
+    exchange_id = config["trading"].get("exchange", "NSE")
+    fetcher = MarketDataFetcher(exchange_id)
+    cleaner = DataCleaner()
+    feature_eng = FeatureEngineer()
+
+    df = fetcher.fetch_ohlcv(symbol, timeframe)
+    df = cleaner.clean(df)
+    df = feature_eng.add_all_indicators(df)
+
+    chart_path = generate_tradingview_chart(df, symbol, timeframe)
+    click.echo(f"Chart saved: {chart_path}")
+
+    import webbrowser
+    webbrowser.open(f"file://{chart_path}")
+
+
+@cli.command()
 def dashboard():
     """Launch the Streamlit dashboard."""
     import subprocess
-    click.echo("Launching dashboard...")
+    click.echo("Launching dashboard at http://localhost:8501 ...")
     subprocess.run(["streamlit", "run", "src/dashboard/app.py"])
 
 
@@ -280,11 +334,15 @@ def status():
     """Show current bot status and configuration."""
     config = load_config()
 
-    click.echo("\n" + "=" * 50)
+    market = config["trading"].get("market", "crypto")
+    exchange = config["trading"].get("exchange", "binance")
+
+    click.echo("\n" + "=" * 55)
     click.echo("  AI Trading Bot — Status")
-    click.echo("=" * 50)
+    click.echo("=" * 55)
+    click.echo(f"  Market:     {market.upper()}")
+    click.echo(f"  Exchange:   {exchange}")
     click.echo(f"  Mode:       {config['trading']['mode']}")
-    click.echo(f"  Exchange:   {config['trading']['exchange']}")
     click.echo(f"  Symbols:    {', '.join(config['trading']['symbols'])}")
     click.echo(f"  Timeframe:  {config['trading']['timeframe']}")
     click.echo(f"  Capital:    ${config['trading']['initial_capital']:,}")
@@ -293,18 +351,34 @@ def status():
     click.echo(f"    Stop Loss:    {config['risk']['stop_loss_pct']}%")
     click.echo(f"    Take Profit:  {config['risk']['take_profit_pct']}%")
     click.echo(f"    Max Drawdown: {config['risk']['max_drawdown_pct']}%")
-    click.echo("=" * 50)
+
+    click.echo(f"\n  Configured Stocks:")
+    for sym in config["trading"]["symbols"]:
+        name = sym.replace(".NS", " (NSE)").replace(".BO", " (BSE)")
+        click.echo(f"    - {name}")
+
+    click.echo("=" * 55)
 
     # Check for trained models
-    from src.ml.registry import ModelRegistry
-    registry = ModelRegistry()
-    models = registry.list_models()
-    if models:
-        click.echo(f"\n  Trained Models: {len(models)}")
-        for m in models[-3:]:
-            click.echo(f"    {m['version']} — {m['model_type']} (acc: {m['metrics'].get('best_accuracy', 'N/A')})")
-    else:
-        click.echo("\n  No trained models. Run: python -m src.main train -s BTC/USDT")
+    try:
+        from src.ml.registry import ModelRegistry
+        registry = ModelRegistry()
+        models = registry.list_models()
+        if models:
+            click.echo(f"\n  Trained Models: {len(models)}")
+            for m in models[-3:]:
+                acc = m["metrics"].get("best_accuracy", "N/A")
+                if isinstance(acc, float):
+                    acc = f"{acc:.2%}"
+                click.echo(f"    {m['version']} — {m['model_type']} | {m['symbol']} | acc: {acc}")
+        else:
+            click.echo("\n  No trained models yet.")
+            click.echo("  Run: python -m src.main train -s RELIANCE.NS")
+    except ImportError:
+        click.echo("\n  ML models: torch not installed (install with: pip install torch)")
+        click.echo("  Run: pip install torch && python -m src.main train -s RELIANCE.NS")
+
+    click.echo()
 
 
 if __name__ == "__main__":

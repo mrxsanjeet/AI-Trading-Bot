@@ -1,8 +1,11 @@
-"""Technical indicator computation for trading signals."""
+"""Technical indicator computation for trading signals.
+
+All indicators are implemented using pandas/numpy directly,
+no external ta-lib dependency required.
+"""
 
 import numpy as np
 import pandas as pd
-import ta
 
 from src.utils.logger import get_logger
 
@@ -32,50 +35,65 @@ class FeatureEngineer:
     def add_moving_averages(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add EMA and SMA indicators."""
         for period in [7, 12, 21, 26, 50, 200]:
-            df[f"ema_{period}"] = ta.trend.ema_indicator(df["close"], window=period)
-            df[f"sma_{period}"] = ta.trend.sma_indicator(df["close"], window=period)
+            df[f"ema_{period}"] = df["close"].ewm(span=period, adjust=False).mean()
+            df[f"sma_{period}"] = df["close"].rolling(window=period).mean()
         return df
 
     def add_rsi(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
         """Add Relative Strength Index."""
-        df["rsi"] = ta.momentum.rsi(df["close"], window=period)
+        delta = df["close"].diff()
+        gain = delta.where(delta > 0, 0.0)
+        loss = -delta.where(delta < 0, 0.0)
+
+        avg_gain = gain.ewm(alpha=1 / period, min_periods=period).mean()
+        avg_loss = loss.ewm(alpha=1 / period, min_periods=period).mean()
+
+        rs = avg_gain / avg_loss.replace(0, np.nan)
+        df["rsi"] = 100 - (100 / (1 + rs))
         return df
 
     def add_macd(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add MACD, signal line, and histogram."""
-        macd = ta.trend.MACD(df["close"], window_slow=26, window_fast=12, window_sign=9)
-        df["macd"] = macd.macd()
-        df["macd_signal"] = macd.macd_signal()
-        df["macd_histogram"] = macd.macd_diff()
+        ema_fast = df["close"].ewm(span=12, adjust=False).mean()
+        ema_slow = df["close"].ewm(span=26, adjust=False).mean()
+        df["macd"] = ema_fast - ema_slow
+        df["macd_signal"] = df["macd"].ewm(span=9, adjust=False).mean()
+        df["macd_histogram"] = df["macd"] - df["macd_signal"]
         return df
 
     def add_bollinger_bands(self, df: pd.DataFrame, period: int = 20, std: float = 2.0) -> pd.DataFrame:
         """Add Bollinger Bands."""
-        bb = ta.volatility.BollingerBands(df["close"], window=period, window_dev=std)
-        df["bb_upper"] = bb.bollinger_hband()
-        df["bb_middle"] = bb.bollinger_mavg()
-        df["bb_lower"] = bb.bollinger_lband()
-        df["bb_width"] = (df["bb_upper"] - df["bb_lower"]) / df["bb_middle"]
-        df["bb_pct"] = (df["close"] - df["bb_lower"]) / (df["bb_upper"] - df["bb_lower"])
+        df["bb_middle"] = df["close"].rolling(window=period).mean()
+        rolling_std = df["close"].rolling(window=period).std()
+        df["bb_upper"] = df["bb_middle"] + std * rolling_std
+        df["bb_lower"] = df["bb_middle"] - std * rolling_std
+        bb_range = df["bb_upper"] - df["bb_lower"]
+        df["bb_width"] = bb_range / df["bb_middle"]
+        df["bb_pct"] = (df["close"] - df["bb_lower"]) / bb_range.replace(0, np.nan)
         return df
 
     def add_atr(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
         """Add Average True Range."""
-        df["atr"] = ta.volatility.average_true_range(df["high"], df["low"], df["close"], window=period)
+        high_low = df["high"] - df["low"]
+        high_close = (df["high"] - df["close"].shift(1)).abs()
+        low_close = (df["low"] - df["close"].shift(1)).abs()
+        true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+        df["atr"] = true_range.rolling(window=period).mean()
         return df
 
     def add_obv(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add On-Balance Volume."""
-        df["obv"] = ta.volume.on_balance_volume(df["close"], df["volume"])
+        direction = np.sign(df["close"].diff())
+        df["obv"] = (df["volume"] * direction).cumsum()
         return df
 
     def add_stochastic(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
-        """Add Stochastic Oscillator."""
-        stoch = ta.momentum.StochasticOscillator(
-            df["high"], df["low"], df["close"], window=period, smooth_window=3
-        )
-        df["stoch_k"] = stoch.stoch()
-        df["stoch_d"] = stoch.stoch_signal()
+        """Add Stochastic Oscillator (%K and %D)."""
+        low_min = df["low"].rolling(window=period).min()
+        high_max = df["high"].rolling(window=period).max()
+        denom = (high_max - low_min).replace(0, np.nan)
+        df["stoch_k"] = ((df["close"] - low_min) / denom) * 100
+        df["stoch_d"] = df["stoch_k"].rolling(window=3).mean()
         return df
 
     def add_fibonacci_levels(self, df: pd.DataFrame, lookback: int = 50) -> pd.DataFrame:
@@ -98,7 +116,7 @@ class FeatureEngineer:
         df["log_returns"] = np.log(df["close"] / df["close"].shift(1))
         df["volatility_20"] = df["returns"].rolling(window=20).std()
         df["volume_sma_20"] = df["volume"].rolling(window=20).mean()
-        df["volume_ratio"] = df["volume"] / df["volume_sma_20"]
+        df["volume_ratio"] = df["volume"] / df["volume_sma_20"].replace(0, np.nan)
         return df
 
     def get_feature_columns(self, df: pd.DataFrame) -> list[str]:

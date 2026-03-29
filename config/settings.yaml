@@ -1,11 +1,16 @@
 trading:
   mode: paper                  # paper | live | backtest
-  exchange: binance
+  market: indian               # indian | crypto
+  exchange: NSE                # NSE | BSE
   symbols:
-    - BTC/USDT
-    - ETH/USDT
-  timeframe: 1h
-  initial_capital: 10000
+    - RELIANCE.NS              # Reliance Industries
+    - TCS.NS                   # Tata Consultancy Services
+    - INFY.NS                  # Infosys
+    - HDFCBANK.NS              # HDFC Bank
+    - SBIN.NS                  # State Bank of India
+  timeframe: 1d
+  initial_capital: 10000       # USD (≈ ₹8,30,000)
+  currency: INR
 
 risk:
   max_position_pct: 5          # Max 5% of portfolio per trade
